@@ -1,0 +1,26 @@
+{
+  "name": "@animusso/exporter",
+  "version": "0.1.0",
+  "description": "Animus Bookmark Exporter - Export bookmarks from various platforms",
+  "scripts": {
+    "build": "npm run clean && node build.js",
+    "dev": "node build.js --watch",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.29",
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^4.0.9",
+    "esbuild": "^0.27.0",
+    "happy-dom": "^20.0.10",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.9"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.11.0"
+  }
+}

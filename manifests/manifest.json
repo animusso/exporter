@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Animus Exporter",
+  "description": "Export bookmarks from various platforms",
+  "version": "0.1.0",
+  "permissions": [
+    "storage",
+    "downloads",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "*://x.com/*",
+    "*://twitter.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "background/background.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  }
+}
