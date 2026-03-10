@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Animus Exporter",
   "description": "Export bookmarks from various platforms",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "permissions": [
     "storage",
     "downloads",
@@ -10,7 +10,8 @@
   ],
   "host_permissions": [
     "*://x.com/*",
-    "*://twitter.com/*"
+    "*://twitter.com/*",
+    "*://www.instagram.com/*"
   ],
   "action": {
     "default_popup": "popup/popup.html"

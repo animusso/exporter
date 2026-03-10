@@ -1,6 +1,6 @@
 {
   "name": "@animusso/exporter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Animus Bookmark Exporter - Export bookmarks from various platforms",
   "scripts": {
     "build": "npm run clean && node build.js",

@@ -142,11 +142,117 @@ function downloadAsJson(ids) {
   });
 }
 
+// src/background/instagram-auth.ts
+var IG_STORAGE_KEYS = ["ig_cookie", "ig_csrf", "ig_app_id"];
+function setupInstagramAuthCapture() {
+  chrome.webRequest.onBeforeSendHeaders.addListener(
+    (details) => {
+      if (!details.url.includes("instagram.com")) return;
+      const headers = details.requestHeaders;
+      if (!headers) return;
+      const cookie = findHeader(headers, "cookie");
+      const csrf = findHeader(headers, "x-csrftoken");
+      const igAppId = findHeader(headers, "x-ig-app-id");
+      if (!cookie || !csrf) return;
+      chrome.storage.local.get([...IG_STORAGE_KEYS], (result) => {
+        const updates = {};
+        if (cookie && result["ig_cookie"] !== cookie) updates["ig_cookie"] = cookie;
+        if (csrf && result["ig_csrf"] !== csrf) updates["ig_csrf"] = csrf;
+        if (igAppId && result["ig_app_id"] !== igAppId) updates["ig_app_id"] = igAppId;
+        if (Object.keys(updates).length > 0) {
+          chrome.storage.local.set(updates);
+        }
+      });
+    },
+    { urls: ["*://www.instagram.com/*"] },
+    ["requestHeaders", "extraHeaders"]
+  );
+}
+function waitForInstagramAuthData() {
+  return new Promise((resolve) => {
+    const check = () => {
+      chrome.storage.local.get([...IG_STORAGE_KEYS], (result) => {
+        const cookie = result["ig_cookie"];
+        const csrf = result["ig_csrf"];
+        const igAppId = result["ig_app_id"];
+        if (cookie && csrf && igAppId) {
+          resolve({ cookie, csrf, igAppId });
+        } else {
+          setTimeout(check, 500);
+        }
+      });
+    };
+    check();
+  });
+}
+function findHeader(headers, name) {
+  return headers.find((h) => h.name.toLowerCase() === name)?.value ?? "";
+}
+
+// src/background/instagram-bookmarks.ts
+async function fetchSavedPosts(authData, onProgress) {
+  const urls = [];
+  let maxId;
+  let page = 0;
+  while (true) {
+    page++;
+    onProgress?.(`Fetching page ${page}...`);
+    const basePath = "https://www.instagram.com/api/v1/feed/saved/posts/";
+    const url = maxId ? `${basePath}?max_id=${maxId}` : basePath;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Cookie: authData.cookie,
+        "X-CSRFToken": authData.csrf,
+        "X-IG-App-ID": authData.igAppId
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`Instagram saved posts API error: ${response.status}`);
+    }
+    const data = await response.json();
+    const items = data.items ?? [];
+    for (const item of items) {
+      const code = item.media?.code;
+      const username = item.media?.user?.username;
+      if (code && username) {
+        urls.push(`${username}/p/${code}`);
+      }
+    }
+    onProgress?.(`Found ${urls.length} posts so far...`);
+    if (!data.more_available || !data.next_max_id) break;
+    maxId = data.next_max_id;
+  }
+  return urls;
+}
+function buildExportResult2(urls) {
+  return {
+    type: "instagram",
+    items: urls.map((url) => ({ url }))
+  };
+}
+function downloadAsJson2(result) {
+  const jsonContent = JSON.stringify(result, null, 2);
+  const dataUrl = `data:application/json;charset=utf-8,${encodeURIComponent(jsonContent)}`;
+  const fileName = `instagram_saved_${Date.now()}.json`;
+  chrome.downloads.download({
+    url: dataUrl,
+    filename: fileName,
+    saveAs: true
+  });
+}
+
 // src/background/background.ts
 setupAuthCapture();
+setupInstagramAuthCapture();
+chrome.storage.local.remove("ig_state");
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.action === "exportTwitterBookmarks") {
     handleTwitterExport(sendResponse);
+    return true;
+  }
+  if (request.action === "exportInstagramBookmarks") {
+    handleInstagramExport(sendResponse);
     return true;
   }
   return void 0;
@@ -154,7 +260,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 async function handleTwitterExport(sendResponse) {
   try {
     sendStatus("Opening Twitter bookmarks...");
-    chrome.tabs.create({ url: "https://x.com/i/bookmarks/all" });
+    chrome.tabs.create({ url: "https://x.com/i/bookmarks/all", active: false });
     sendStatus("Waiting for authentication...");
     const authData = await waitForAuthData();
     sendStatus("Fetching bookmarks...");
@@ -170,6 +276,31 @@ async function handleTwitterExport(sendResponse) {
     downloadAsJson(ids);
     sendStatus(`Exported ${ids.length} bookmarks.`);
     sendResponse({ status: "done", count: ids.length });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    sendStatus(`Error: ${message}`);
+    sendResponse({ status: "error", message });
+  }
+}
+async function handleInstagramExport(sendResponse) {
+  try {
+    sendStatus("Waiting for Instagram authentication...");
+    chrome.tabs.create({ url: "https://www.instagram.com/", active: false });
+    const authData = await waitForInstagramAuthData();
+    sendStatus("Fetching saved posts...");
+    const urls = await fetchSavedPosts(authData, (msg) => {
+      sendStatus(msg);
+    });
+    if (urls.length === 0) {
+      sendStatus("No saved posts found.");
+      sendResponse({ status: "empty" });
+      return;
+    }
+    sendStatus(`Downloading ${urls.length} saved posts...`);
+    const result = buildExportResult2(urls);
+    downloadAsJson2(result);
+    sendStatus(`Exported ${urls.length} saved posts.`);
+    sendResponse({ status: "done", count: urls.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     sendStatus(`Error: ${message}`);
